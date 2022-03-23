@@ -73,7 +73,7 @@ rstan_options(auto_write = TRUE)
 
 
 #m=stan_model(file = '/home/antonio/diabetes2.stan')
-m=stan_model(file = '/home/antonio/stanPkgTest/inst/stan/diabetes_update.stan')
+m=stan_model(file = '/home/antonio/stanPkgTestFork/inst/stan/diabetes_update.stan')
 
 
 fit <- sampling(m, data=stan_data,

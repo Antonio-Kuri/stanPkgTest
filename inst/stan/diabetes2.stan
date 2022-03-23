@@ -1,22 +1,80 @@
 functions {
   
+  real[] weightRedux_rng(real[] update){
+    real temp[size(update)];
+    real male_weightredux[7];
+    real female_weightredux[7];
+    real current_weight;
+    real current_height;
+    int age_group_index;
+    
+    male_weightredux[1]=2.351;
+    male_weightredux[2]=1.227;
+    male_weightredux[3]=1.652;
+    male_weightredux[4]=1.412;
+    male_weightredux[5]=1.102;
+    male_weightredux[6]=0.638;
+    male_weightredux[7]=0.795;
+    
+    female_weightredux[1]=1.562;
+    female_weightredux[2]=1.320;
+    female_weightredux[3]=1.123;
+    female_weightredux[4]=0.784;
+    female_weightredux[5]=0.647;
+    female_weightredux[6]=0.472;
+    female_weightredux[7]=0.567;
+    
+    temp=update;
+    age_group_index = 0;
+    while(temp[1]/10>=age_group_index+2){
+      age_group_index+=1;
+    }
+    if (age_group_index>7){
+      age_group_index=7;
+    }
+    
+    current_height = temp[6];
+    if (temp[3]==0){
+      current_weight=temp[5]-normal_rng(female_weightredux[age_group_index],female_weightredux[age_group_index]*0.2);
+    }
+    else {
+      current_weight=temp[5]-normal_rng(male_weightredux[age_group_index],male_weightredux[age_group_index]*0.2);
+    }
+    
+    temp[5] =current_weight;
+    
+    if (temp[52]==1){
+      temp[13]=current_weight/current_height^2;
+    }
+    else if (temp[52]==0){
+      temp[56]=current_weight/current_height^2;
+    }
+    
+    return temp;
+  }
+  
   real[] simDiabetes(real[] update,real intercept, real age, real bmi, 
   real sbp, real dbp, real bgl, real hdl, real trig, real female, real ethni,
   real rand){
     real predictor;
     real H1;
     real prob;
+    real current_age;
     real temp[size(update)];
-
+  
     temp=update;
-    predictor=intercept+age*temp[1]+hdl*temp[12]+trig*temp[55]+bgl*temp[54]+
-    bmi*temp[13]+dbp*temp[53]+sbp*temp[9]+female*(1-temp[3])+
+    current_age = temp[1];
+    
+    predictor=intercept+age*temp[1]+hdl*temp[58]+trig*temp[55]+bgl*temp[54]+
+    bmi*temp[56]+dbp*temp[53]+sbp*temp[57]+female*(1-temp[3])+
     ethni*(temp[4]==0?1:0);
     
-    H1=exp(predictor)/(1+exp(predictor));
+    H1=1/(1+exp(-predictor));
     prob=1 - (1 - H1)^(1.0/10);
     if (prob>rand){
       temp[52]=1;
+      temp[2]=current_age;
+      temp[7]=1;
     }
     return temp;
   }
@@ -73,6 +131,10 @@ functions {
       age_group_index+=1;
     }
     
+    if (age_group_index>18){
+      age_group_index=18;
+    }
+    
     if (temp[3]==0){
       prob=female_death_prob[age_group_index];
     }
@@ -80,7 +142,7 @@ functions {
       prob=male_death_prob[age_group_index];
     }
     
-    if (prob<rand){
+    if (prob>rand){
       temp[32]=0;
     }
     
@@ -260,6 +322,10 @@ functions {
     asian*(temp[4]==1?1:0)+ african*(temp[4]==2?1:0) + female*(temp[3]==1?1:0);
     
     temp[position_rf] = rf_current_year;
+    
+    if (position_rf==13){
+      temp[5] = rf_current_year*(temp[6])^2;
+    }
     
     return temp;
   }
@@ -705,19 +771,15 @@ data {
   real db;      //diastolic blood preassure
   real bg;       // blood glucose
   real tg;       // triglycerides
-  real diabetes;  // if has diabetes
+  real diabetes;// if has diabetes
+  real bmpd;  //duplicates for pre diabetes functions, which we have no way 
+  real sbpd;  //of evolving through time
+  real hdpd;
 }
 
 transformed data {
-  real egfr60m;
-  real egfr60l;
-  real afro_carib;
-  real indian_asian;
   real bm;
-  real bmi1;
-  real bmi3;
   real diab_years;
-  real ldl35;
   real alive;
   real chf_even;
   real ihd_even;
@@ -767,7 +829,10 @@ generated quantities {
   int order[complicaciones]={1,2,3,4,5,6,7,8};
   simplex[complicaciones] theta=[0.125,0.125,0.125,0.125,0.125,0.125,0.125,0.125]';
   real history[len_his];
+  //real both_updates[len_his,2]; //array with both parallel worlds, one with weight reduction, the other without
   real update[len_his];
+  real output[len_his];
+  real output_wr[len_his];
   real primera=0;
   history[1]=ag;                //current age of subject
   history[2]=age_dia;           //age diagnostic
@@ -796,7 +861,7 @@ generated quantities {
   history[25]=amp_hist;          //hitories
   history[26]=mii_hist;           
   history[27]=strok_hist;
-  history[28]=ih;                //ihd outcome
+  history[28]=ih;                //ihd outcomebmpt2d
   history[29]=ch;                // chf outcome  
   history[30]=blin;              // blindeness
   history[31]=rena;              //renal failure
@@ -824,14 +889,21 @@ generated quantities {
   history[53]=db;               //diastolic blood preassure
   history[54]=bg;              // blood glucose
   history[55]=tg;              // triglycerides
+  history[56]=bmpd;  //duplicates for pre diabetes functions,
+  history[57]=sbpd;  //of evolving through time
+  history[58]=hdpd;
 
+  for (m in 1:2){
   update=history;
   
   for (i in 1:time){
     if (update[32]==0) {
       break; // en algun mumento tengo que cambiar esta condicion
     }
-    
+    else{
+    if (m==1 && i<3){
+      update = weightRedux_rng(update);
+    }
     if (update[52]==0){
       real intercept;
       real age;
@@ -847,15 +919,15 @@ generated quantities {
       real rand2;
       
       intercept=-8.464;
-      age=-0.014;
-      bmi=0.053;
-      sbp=0.006;
-      dbp=0.003;
-      bgl=0.062;
-      hdl=-0.018;
-      trig=0.001;
-      female=-0.084;
-      ethni=-0.466;
+      age=normal_rng(-0.014,0.004);
+      bmi=normal_rng(0.053,0.005);
+      sbp=normal_rng(0.006,0.002);
+      dbp=normal_rng(0.003,0.004);
+      bgl=normal_rng(0.062,0.002);
+      hdl=normal_rng(-0.018,0.002);
+      trig=normal_rng(0.001,0.00025);
+      female=normal_rng(-0.084,0.066);
+      ethni=normal_rng(-0.466,0.062);
       rand=uniform_rng(0,1);
       update=simDiabetes(update,intercept,age,bmi,sbp,dbp,bgl,hdl,trig,female,
       ethni,rand);
@@ -1522,7 +1594,6 @@ generated quantities {
       update[1]+=1;
       update[7]+=1;
     }
-    mat_temp[i]=update;
     update[33]=0;
     update[34]=0;
     update[35]=0;
@@ -1530,5 +1601,17 @@ generated quantities {
     update[37]=0;
     update[38]=0;
   }
+    }
+  if (m==2){
+    output = update;
+  }
+  else if (m==1){
+    output_wr = update;
+  }
+  //both_updates[m]=update;
+  mat_temp[i]=update;
+  }
   }
 }
+
+
